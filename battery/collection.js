@@ -3,7 +3,8 @@
 //   - new effect classes: B.register('CMyEffect', class extends B.Shift / B.Drawer {...}) in a file loaded
 //     before core.js runs new Engine(); they are available to presets but never used by Random mode.
 //   - presets: push objects in the presets.js format onto B.COLLECTION (keys must be unique).
-// The players list: Random + built-in presets + collection (+ classic presets when loaded from Windows).
+// The Plasma menu lists: (Originals when classic presets are loaded from Windows), built-in presets, never-used
+// parts, Anthony's collection (+ any other collection entries).
 (function (root) {
   var B = root.Battery = root.Battery || {};
   if (typeof module !== 'undefined' && module.exports) module.exports = B;

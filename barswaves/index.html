@@ -12,10 +12,10 @@ html,body{height:100%;margin:0;background:#000;color:#e7eef5;font:13px/1.4 syste
   background:linear-gradient(to top,rgba(0,0,0,.85),rgba(0,0,0,.5) 65%,transparent);transition:opacity .35s}
 .bar.hide{opacity:0;pointer-events:none}
 body.idle{cursor:none}
-#other{text-decoration:none}
-button,#other,select{font:600 12px system-ui,Segoe UI,sans-serif;color:#e7eef5;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);
+#home{text-decoration:none}
+button,#home,select{font:600 12px system-ui,Segoe UI,sans-serif;color:#e7eef5;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);
   border-radius:5px;padding:6px 10px;cursor:pointer}
-button:hover,#other:hover,select:hover{background:rgba(255,255,255,.14)}
+button:hover,#home:hover,select:hover{background:rgba(255,255,255,.14)}
 button.on{background:#2d7fb8;border-color:#2d7fb8}
 select{max-width:240px}
 select option{background:#111}
@@ -27,15 +27,18 @@ input[type=file]{display:none}
 <body>
 <canvas id="stage"></canvas>
 <div class="bar" id="bar">
+  <select id="vis" title="Visualizer"><option value="../battery/index.html">Plasma</option><option value="../barswaves/index.html" selected>Spectrum</option></select>
   <button id="prev" title="Previous preset (Left)">&#9664;</button>
   <select id="preset" title="Preset"></select>
   <button id="next" title="Next preset (Right)">&#9654;</button>
   <span id="music"></span>
   <span id="status"></span>
   <label class="vol" title="Volume (Up / Down)">&#128266;<input type="range" id="vol" min="0" max="100" step="1" value="80"></label>
+  <button id="setup" title="Set up Windows extras: classic presets, Windows sound, sample songs">Setup</button>
   <button id="classic" title="Classic styles from your own Windows">Classic</button>
-  <a id="other" href="../battery/index.html" title="Switch visualizer">Plasma</a>
+  <a id="home" href="../home.html" title="Home: start page, about">&#8962;</a>
   <button id="look" title="Pixel (sharp, like the original) or Smooth (S). Only matters when the image is scaled.">Pixel</button>
+  <button id="motion" title="Motion: 30 fps like the original, or Smooth (blends frames at your screen's refresh rate: 60, 144, 240 Hz...). The visualizer itself always runs at its original 30 steps per second.">30 fps</button>
   <button id="fit" title="Widescreen (draws at your window's own size, like the original), Stretch 4:3 (640x480 stretched to the window) or Boxed 4:3 (A)">Widescreen</button>
   <button id="fs" title="Fullscreen (F)">Fullscreen</button>
 </div>
@@ -46,6 +49,7 @@ input[type=file]{display:none}
 <script src="../common/music.js"></script>
 <script src="../common/classic.js"></script>
 <script src="../common/classic-ui.js"></script>
+<script src="../common/setup.js"></script>
 <script>
 // Player. Plain ES2015 script (works from file://, no modules, no build).
 //
@@ -65,16 +69,22 @@ input[type=file]{display:none}
   'use strict';
   var BW = window.BarsWaves, BR = window.BRAND;
   document.title = BR.spectrum + ' - ' + BR.name;
-  document.getElementById('other').textContent = BR.plasma;
+  var vis = document.getElementById('vis');
+  vis.options[0].textContent = BR.plasma; vis.options[1].textContent = BR.spectrum;
+  vis.onchange = function () {   // an active choice: the site (index.html) opens into this visualizer next time
+    try { localStorage.setItem('retro.visualizer', vis.selectedIndex ? 'barswaves' : 'battery'); } catch (e) {}
+    location.href = vis.value;
+  };
   var classicUi = null;
   function styleList() { var p = classicUi && classicUi.active(); return BW.STYLES.concat(p && p.barswaves ? p.barswaves : []); }
   var STEP_MS = 1000 / 30;
   var store = {}; try { store = JSON.parse(localStorage.getItem('barswaves.settings') || '{}'); } catch (e) {}
   var look = store.look === 'smooth' ? 'smooth' : 'pixel';
+  var motion = store.motion === 'smooth' ? 'smooth' : 'original';   // 'original' = 30 fps like the original
   var screenMode = store.screen === 'boxed' || store.screen === 'stretch' ? store.screen : 'wide';
   var vol = typeof store.vol === 'number' ? Math.max(0, Math.min(100, store.vol)) : 80;
   var presetSaved = typeof store.preset === 'number' ? store.preset : 0;
-  function save() { try { localStorage.setItem('barswaves.settings', JSON.stringify({ look: look, screen: screenMode, vol: vol, preset: E.presetIndex })); } catch (e) {} }
+  function save() { try { localStorage.setItem('barswaves.settings', JSON.stringify({ look: look, screen: screenMode, vol: vol, preset: E.presetIndex, motion: motion })); } catch (e) {} }
 
   var E = new BW.Engine({ seed: 1 });
   E.mediaInfo(2);
@@ -92,11 +102,12 @@ input[type=file]{display:none}
     return [w, h];
   }
   var off = document.createElement('canvas'), octx = off.getContext('2d'), img = null, img32 = null, EW = 0, EH = 0;
+  var offPrev = document.createElement('canvas'), pctx = offPrev.getContext('2d');
   function ensureImage() {
     var sz = engineSize();
     if (sz[0] !== EW || sz[1] !== EH) {
       EW = sz[0]; EH = sz[1];
-      off.width = EW; off.height = EH; img = octx.createImageData(EW, EH); img32 = new Uint32Array(img.data.buffer);
+      off.width = EW; off.height = EH; offPrev.width = EW; offPrev.height = EH; img = octx.createImageData(EW, EH); img32 = new Uint32Array(img.data.buffer);
       E.resize(EW, EH);   // like WMP: a new DIB when the window size changes (trails restart)
     }
   }
@@ -128,6 +139,7 @@ input[type=file]{display:none}
     onStatus: function (t) { statusEl.textContent = t; },
     onActivity: function () { poke(); }
   });
+  RetroSetup.mount({ button: $('setup'), music: music });
   var tl = new Uint8Array(4096);
   var level = { tl: tl, freq: [tl.subarray(0, 1024), tl.subarray(1024, 2048)], wave: [tl.subarray(2048, 3072), tl.subarray(3072, 4096)], state: 2 };
 
@@ -140,30 +152,38 @@ input[type=file]{display:none}
   window.addEventListener('resize', function () {
     resizeStage();
     clearTimeout(reshapeT);
-    reshapeT = setTimeout(function () { ensureImage(); present(); }, 150);   // new size once resizing settles
+    reshapeT = setTimeout(function () { ensureImage(); newFrame(); present(); }, 150);   // new size once resizing settles
   });
   resizeStage();
-  function present() {
-    E.toRGBA(img32); octx.putImageData(img, 0, 0);
+  function newFrame() { pctx.drawImage(off, 0, 0); E.toRGBA(img32); octx.putImageData(img, 0, 0); }
+  // t = 0..1 position between the previous and the newest frame (Smooth motion); 1 / omitted = newest only
+  function present(t) {
+    if (t == null) t = 1;
     var smooth = look === 'smooth';
     stage.classList.toggle('pixel', !smooth);
     ctx.imageSmoothingEnabled = smooth;
     if (smooth) ctx.imageSmoothingQuality = 'high';
-    var cw = stage.width, ch = stage.height;
-    if (screenMode !== 'boxed') ctx.drawImage(off, 0, 0, cw, ch);
-    else {
-      var s = Math.min(cw / EW, ch / EH), dw = Math.round(EW * s), dh = Math.round(EH * s);
+    var cw = stage.width, ch = stage.height, x = 0, y = 0, dw = cw, dh = ch;
+    if (screenMode === 'boxed') {
+      var s = Math.min(cw / EW, ch / EH); dw = Math.round(EW * s); dh = Math.round(EH * s);
+      x = (cw - dw) >> 1; y = (ch - dh) >> 1;
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cw, ch);
-      ctx.drawImage(off, (cw - dw) >> 1, (ch - dh) >> 1, dw, dh);
     }
+    if (t < 1) { ctx.globalAlpha = 1; ctx.drawImage(offPrev, x, y, dw, dh); ctx.globalAlpha = t; }
+    ctx.drawImage(off, x, y, dw, dh);
+    ctx.globalAlpha = 1;
   }
   var SCREEN_LABEL = { stretch: 'Stretch 4:3', boxed: 'Boxed 4:3', wide: 'Widescreen' };
   function labels() { $('fit').textContent = SCREEN_LABEL[screenMode]; $('look').textContent = look === 'smooth' ? 'Smooth' : 'Pixel'; }
   $('fit').onclick = function () {
     screenMode = screenMode === 'wide' ? 'stretch' : screenMode === 'stretch' ? 'boxed' : 'wide';
-    ensureImage(); save(); labels(); present();
+    ensureImage(); newFrame(); save(); labels(); present();
   };
   $('look').onclick = function () { look = look === 'smooth' ? 'pixel' : 'smooth'; save(); labels(); present(); };
+  var hz = 60, hzAcc = 0, hzN = 0;
+  function motionLabel() { $('motion').textContent = motion === 'smooth' ? 'Smooth ' + hz + ' Hz' : '30 fps'; }
+  $('motion').onclick = function () { motion = motion === 'smooth' ? 'original' : 'smooth'; save(); motionLabel(); };
+  motionLabel();
   labels();
   var volEl = $('vol'); volEl.value = vol;
   function setVol(v) {
@@ -183,7 +203,11 @@ input[type=file]{display:none}
       acc -= STEP_MS; steps++;
       if (!music.isPaused()) { music.sampleLevel(level); level.state = 2; E.frame(level); }
     }
-    if (steps) present();
+    if (steps) newFrame();
+    if (motion === 'smooth') present(Math.max(0, Math.min(1, acc / STEP_MS)));
+    else if (steps) present(1);
+    var dt = now - (tick.prev || now); tick.prev = now;
+    if (dt > 2 && dt < 100) { hzAcc += dt; if (++hzN >= 60) { var h = Math.round(1000 / (hzAcc / hzN)); hzAcc = hzN = 0; if (Math.abs(h - hz) > 2) { hz = h; motionLabel(); } } }
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);

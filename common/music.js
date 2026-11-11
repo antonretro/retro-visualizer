@@ -3,6 +3,10 @@
  * Plain ES2015 script (no modules, no build), works from file:// and http(s)://.
  *
  *   <script src="../common/midi-sf2.js"></script>   (optional: MIDI + SoundFont playback)
+ *   <script src="../common/songs.js"></script>      (optional: original demo songs; loaded automatically
+ *                                                    from next to music.js when the page doesn't include it)
+ * Until the user picks a source, the original songs (window.WMP_SONGS) are the default: the visuals run on
+ * the silent Demo beat until the first click / key / touch, then the songs play in a loop.
  *   <script src="../common/music.js"></script>
  *
  *   var music = WmpMusic.create({
@@ -40,6 +44,7 @@
  */
 (function (root) {
   'use strict';
+  var SELF_SRC = (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || '';
   var AUDIO_RE = /\.(mp3|wav|ogg|oga|flac|m4a|aac|opus|webm|weba|wma|mp4|m4b)$/i;
   var MIDI_RE = /\.(mid|midi|kar|rmi)$/i, SF2_RE = /\.sf2$/i;
   var K_FAVS = 'wmpmusic.radio.favs', K_NOVIZ = 'wmpmusic.radio.noviz', K_OPTS = 'wmpmusic.options', K_SOUND = 'wmpmusic.sound';
@@ -221,11 +226,14 @@
     var onActivity = opts.onActivity || function () {};
     var stageFactory = opts.analyzer || analyserStage;
     var haveMidi = typeof root.MidiSF2 !== 'undefined';
+    var H = root.RetroHost;   // desktop app: files found on this PC (read in place), see app/windows
     // Demo MIDIs: none ship with this player. The user can pick the sample MIDIs of their own Windows
     // (C:\Windows\Media\*.mid); they are kept on this device only (localStorage, base64): a one-time step.
     var K_DEMOS = 'rvmusic.demos', DEMOS_MAX = 3000000;
     var DEMOS = haveMidi ? lsGet(K_DEMOS, []) : [];
     if (!Array.isArray(DEMOS)) DEMOS = [];
+    var SONGS = (haveMidi && root.WMP_SONGS) || [];
+    var autoSongs = haveMidi, gestured = false;   // original songs = default source until the user picks another
     var vol = clamp(typeof opts.volume === 'number' ? opts.volume : 80, 0, 100);
     var sopts = lsGet(K_OPTS, {});
     var shuffle = !!sopts.shuffle, repeat = sopts.repeat === 'all' || sopts.repeat === 'one' ? sopts.repeat : 'off';
@@ -237,7 +245,7 @@
     var sf = { key: '', name: '' }, pendingSf = null;
     var fx = lsGet('wmpm.fx', null) || { reverb: 1, chorus: 1 };
     var soundChoice = lsGet(K_SOUND, null);   // null until the user picks: Retro Synth by default
-    var soundMode = soundChoice === 'windows' || soundChoice === 'sf2' ? soundChoice : 'retro';
+    var soundMode = soundChoice === 'windows' || soundChoice === 'sf2' ? soundChoice : soundChoice == null && H && H.dls ? 'windows' : 'retro';
     var dls = { cached: false, buf: null }, soundQ = Promise.resolve(), pendingPick = '';
     var queue = { list: [], order: [], pos: -1 };
     var token = 0, radioTimer = 0, demo = new DemoBeat();
@@ -319,9 +327,10 @@
     function nowStatus(t) { st.title = t; status(t); }
 
     function startDemo() {
-      token++; stopSources(); setKind('demo'); nowStatus('Demo beat');
+      autoSongs = false; token++; stopSources(); setKind('demo'); nowStatus('Demo beat');
     }
     function startMic() {
+      autoSongs = false;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { status('Microphone not available here'); return; }
       ensureCtx();
       var my = ++token;
@@ -346,7 +355,9 @@
       else { queue.order = []; for (i = 0; i < n; i++) queue.order.push(i); }
       queue.pos = Math.max(0, queue.order.indexOf(cur));
     }
-    function playList(list, index) {
+    function playList(list, index, auto) {
+      if (!auto) autoSongs = false;
+      queue.loop = !!auto;   // the default original-songs set loops whatever the repeat setting
       queue.list = list.slice(); buildOrder(index);
       playCurrent();
     }
@@ -355,7 +366,7 @@
       var n = queue.list.length; if (!n) return;
       if (auto && repeat === 'one') { playCurrent(); return; }
       if (queue.pos + 1 < n) queue.pos++;
-      else if (repeat === 'all') { if (shuffle) queue.order = shuffled(n, -1); queue.pos = 0; }
+      else if (repeat === 'all' || queue.loop) { if (shuffle) queue.order = shuffled(n, -1); queue.pos = 0; }
       else if (auto) { st.paused = true; updatePlay(); status('End of playlist'); return; }
       else return;   // manual next at the end: stay
       playCurrent();
@@ -413,6 +424,10 @@
     }
     function setSound(mode, explicit) {
       if (!haveMidi) return;
+      if (mode === 'windows' && !dls.buf && !dls.cached && H && H.dls) {   // desktop app: use the found gm.dls
+        status('Loading the Windows sound set...');
+        H.file(H.dls).then(useDlsFile, function (e) { status(errText(e)); }); return;
+      }
       if (mode === 'windows' && !dls.buf && !dls.cached) {   // ask once for the file
         pendingPick = 'windows'; renderSound();
         status('Pick gm.dls: ' + DLS_PATH);
@@ -424,18 +439,20 @@
       if (explicit !== false) { soundChoice = mode; lsSet(K_SOUND, mode); }
       applySound();
     }
-    function useDlsFile(f) {
-      if (!f) return;
-      readFile(f).then(function (buf) {
+    function useDlsFile(f) {   // -> Promise<bool used>
+      if (!f) return Promise.resolve(false);
+      return readFile(f).then(function (buf) {
         var u = new Uint8Array(buf, 0, Math.min(12, buf.byteLength));
         var tag = String.fromCharCode.apply(null, u);
-        if (tag.slice(0, 4) !== 'RIFF' || tag.slice(8, 12) !== 'DLS ') { status(f.name + ' is not a DLS sound bank: pick ' + DLS_PATH); return; }
+        if (tag.slice(0, 4) !== 'RIFF' || tag.slice(8, 12) !== 'DLS ') { status(f.name + ' is not a DLS sound bank: pick ' + DLS_PATH); return false; }
         root.MidiSF2._parseDLS(buf);   // throws if unusable (nothing is kept then)
-        dls.buf = buf; dls.cached = true;
-        idb('readwrite', function (s) { return s.put(buf, 'gmdls'); }).catch(function () { dls.cached = false; });
+        var found = H && H.dls && f.name === H.dls;   // desktop app: the found file is read in place each time, not stored
+        dls.buf = buf; dls.cached = !found;
+        if (!found) idb('readwrite', function (s) { return s.put(buf, 'gmdls'); }).catch(function () { dls.cached = false; });
         if (sf.key === 'dls') sf = { key: '', name: '' };   // reload the new bytes
         setSound('windows');
-      }).catch(function (e) { status('Could not use ' + f.name + ': ' + errText(e)); });
+        return true;
+      }).catch(function (e) { status('Could not use ' + f.name + ': ' + errText(e)); return false; });
     }
     function forgetDls() {
       dls.buf = null; dls.cached = false;
@@ -461,7 +478,7 @@
         }).then(function (info) {
           if (my !== token || !info) return;
           actx.resume(); m.play();
-          st.midiLabel = label; nowStatus(midiStatus());
+          st.midiLabel = label; nowStatus(it.original ? 'Playing: ' + it.title + ' (original song)' : midiStatus());
         }, function (e) { if (my === token) status('Could not read MIDI ' + it.name + ': ' + errText(e)); });
         return;
       }
@@ -580,7 +597,8 @@
     function addFiles(list, play) {
       var fl = Array.prototype.slice.call(list || []), media = [], sfF = null;
       fl.forEach(function (f) {
-        if (SF2_RE.test(f.name)) { if (haveMidi) sfF = f; }
+        if (/\.dls$/i.test(f.name)) { if (haveMidi) { ensureCtx(); useDlsFile(f); } }   // dropped gm.dls -> Windows sound
+        else if (SF2_RE.test(f.name)) { if (haveMidi) sfF = f; }
         else if ((MIDI_RE.test(f.name) && haveMidi) || AUDIO_RE.test(f.name) || /^audio\//.test(f.type)) media.push(trackFromFile(f));
       });
       var dirName = fl.length && fl[0].webkitRelativePath ? fl[0].webkitRelativePath.split('/')[0] : '';
@@ -792,7 +810,7 @@
       } else if (pendingPick === 'sf2' && !pendingSf) {
         kids.push(h('span', { text: 'Pick a .sf2 SoundFont, or open a folder that has one.' }), h('button', { text: 'Pick .sf2', onclick: function () { ui.sf2Input.click(); } }));
       } else if (soundMode === 'windows') {
-        kids.push(h('span', { text: 'Windows GM sound set from your gm.dls (stored in this browser only).' }),
+        kids.push(h('span', { text: 'Windows GM sound set from your gm.dls (' + (H && !dls.cached ? 'read from your Windows' : 'stored in this browser only') + ').' }),
           h('button', { text: 'Pick again', onclick: function () { ui.dlsInput.click(); } }),
           h('button', { text: 'Forget', title: 'Remove the stored copy of gm.dls from this browser', onclick: forgetDls }));
       } else if (soundMode === 'sf2') {
@@ -803,7 +821,8 @@
       kids.forEach(function (k) { ui.soundHint.appendChild(k); });
     }
     renderSound();
-    if (haveMidi) idb('readonly', function (s) { return s.count('gmdls'); }).then(function (n) { dls.cached = n > 0; renderSound(); }, function () {});
+    if (haveMidi && H && H.dls) { if (soundMode === 'windows') setSound('windows', false); }
+    else if (haveMidi) idb('readonly', function (s) { return s.count('gmdls'); }).then(function (n) { dls.cached = n > 0; renderSound(); }, function () {});
 
     function section(id, kids) { var s = h('div', { cls: 'wmpm-sec', id: 'wmpm-sec-' + id, role: 'tabpanel', 'aria-labelledby': 'wmpm-tab-' + id }, kids); ui.secs[id] = s; ui.panel.appendChild(s); return s; }
 
@@ -842,22 +861,27 @@
     ui.demoMic = h('button', { text: 'Microphone', onclick: startMic });
     ui.demoAll = h('button', { text: 'Play all', onclick: function () { playList(demoTracks(), 0); } });
     ui.demoList = h('div', { cls: 'wmpm-list', role: 'list' });
+    ui.songAll = h('button', { text: 'Play all', title: 'Play all the original songs', onclick: function () { playList(songTracks(), 0); } });
+    ui.songList = h('div', { cls: 'wmpm-list', role: 'list', style: 'flex:0 0 auto' });
+    ui.songHead = h('div', { cls: 'wmpm-tools' }, [h('strong', { text: 'Original songs' }), ui.songAll]);
     ui.demoInput = h('input', { type: 'file', cls: 'wmpm-hidden-input', multiple: true, accept: '.mid,.midi,.rmi,.kar' });
-    ui.demoInput.onchange = function () { addDemos(this.files); this.value = ''; };
+    ui.demoInput.onchange = function () { addDemos(this.files).catch(function () {}); this.value = ''; };
     ui.demoPick = h('button', { text: 'Load demos from your Windows', title: 'Pick the .mid files in C:\\Windows\\Media (any MIDI files work)',
       onclick: function () { ui.demoInput.click(); } });
     ui.demoForget = h('button', { text: 'Forget demos', onclick: function () { DEMOS = []; demoCache = null; lsSet(K_DEMOS, []); renderDemos(); } });
     ui.demoInfo = h('div', { cls: 'wmpm-info', 'aria-live': 'polite' });
-    section('demos', [h('div', { cls: 'wmpm-tools' }, [ui.demoBeat, ui.demoMic, ui.demoAll]),
+    section('demos', [h('div', { cls: 'wmpm-tools' }, [ui.demoBeat, ui.demoMic]), ui.songHead, ui.songList,
+      h('div', { cls: 'wmpm-tools' }, [h('strong', { text: 'Your Windows sample MIDIs' }), ui.demoAll]),
       h('div', { cls: 'wmpm-tools' }, [ui.demoPick, ui.demoForget, ui.demoInput]), ui.demoInfo, ui.demoList]);
+    ui.songHead.hidden = ui.songList.hidden = !SONGS.length;
     ui.drop = h('div', { cls: 'wmpm-drop' });
     document.body.appendChild(ui.panel); document.body.appendChild(ui.drop);
 
-    var demoCache = null;
-    function demoTracks() {
-      if (demoCache) return demoCache;
-      demoCache = DEMOS.map(function (d) {
-        var tr = { type: 'midi', name: d.file, title: d.name, path: 'Demo MIDI (this device)' };
+    var demoCache = null, songCache = null;
+    function songTracks() {
+      if (songCache) return songCache;
+      songCache = SONGS.map(function (d) {
+        var tr = { type: 'midi', name: d.file, title: d.name, path: 'Original song', original: true };
         tr.getFile = function () {
           var bin = atob(d.b64), u = new Uint8Array(bin.length);
           for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
@@ -865,6 +889,24 @@
         };
         return tr;
       });
+      return songCache;
+    }
+    function demoTracks() {
+      if (demoCache) return demoCache;
+      var mine = DEMOS.map(function (d) { return d.file.toLowerCase(); });
+      var found = (H && haveMidi && H.midis || []).filter(function (k) { return mine.indexOf(k.split('/').pop().toLowerCase()) < 0; }).map(function (k) {
+        var n = k.split('/').pop().replace(/\.[^.]+$/, '');
+        return { type: 'midi', name: k.split('/').pop(), title: n.charAt(0).toUpperCase() + n.slice(1), path: 'Windows', getFile: function () { return H.file(k); } };
+      });
+      demoCache = found.concat(DEMOS.map(function (d) {
+        var tr = { type: 'midi', name: d.file, title: d.name, path: 'Demo MIDI (this device)' };
+        tr.getFile = function () {
+          var bin = atob(d.b64), u = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          return Promise.resolve(new File([u], d.file, { type: 'audio/midi' }));
+        };
+        return tr;
+      }));
       return demoCache;
     }
 
@@ -927,9 +969,9 @@
     }
     function addDemos(files) {
       var list = Array.prototype.filter.call(files || [], function (f) { return MIDI_RE.test(f.name); });
-      if (!haveMidi) { ui.demoInfo.textContent = 'MIDI playback is not available in this build.'; return; }
-      if (!list.length) { ui.demoInfo.textContent = 'No MIDI files chosen. In C:\\Windows\\Media pick the files ending in .mid.'; return; }
-      Promise.all(list.map(function (f) { return readFile(f).then(function (b) { return { f: f, u: new Uint8Array(b) }; }); })).then(function (rs) {
+      if (!haveMidi) { ui.demoInfo.textContent = 'MIDI playback is not available in this build.'; return Promise.reject(new Error(ui.demoInfo.textContent)); }
+      if (!list.length) { ui.demoInfo.textContent = 'No MIDI files chosen. In C:\\Windows\\Media pick the files ending in .mid.'; return Promise.reject(new Error(ui.demoInfo.textContent)); }
+      return Promise.all(list.map(function (f) { return readFile(f).then(function (b) { return { f: f, u: new Uint8Array(b) }; }); })).then(function (rs) {
         rs.forEach(function (r) {
           var bin = '', u = r.u; for (var i = 0; i < u.length; i += 8192) bin += String.fromCharCode.apply(null, u.subarray(i, Math.min(u.length, i + 8192)));
           var name = r.f.name.replace(/\.[^.]+$/, ''), rec = { name: name.charAt(0).toUpperCase() + name.slice(1), file: r.f.name, b64: btoa(bin) };
@@ -941,17 +983,19 @@
         var size = JSON.stringify(DEMOS).length, kept = size <= DEMOS_MAX && lsSet(K_DEMOS, DEMOS) !== false;
         ui.demoInfo.textContent = DEMOS.length + ' demo songs' + (kept ? ' (kept on this device)' : ' (too big to keep: available until you close the page)');
         renderDemos();
-      }, function (e) { ui.demoInfo.textContent = 'Could not read the files: ' + errText(e); });
+      }, function (e) { ui.demoInfo.textContent = 'Could not read the files: ' + errText(e); throw e; });
     }
     function renderDemos() {
       var tr = demoTracks();
       ui.demoAll.style.display = tr.length ? '' : 'none';
-      ui.demoForget.style.display = tr.length ? '' : 'none';
+      ui.demoForget.style.display = DEMOS.length ? '' : 'none';
       if (!ui.demoInfo.textContent) ui.demoInfo.textContent = tr.length ? tr.length + ' demo songs on this device' :
         'Windows comes with a few sample MIDI songs in C:\\Windows\\Media. Pick them here to use them as demos; they stay on this device.';
       ui.demoBeat.classList.toggle('on', st.kind === 'demo');
       ui.demoMic.classList.toggle('on', st.kind === 'mic');
       fillList(ui.demoList, tr.map(function (t, i) { return rowFor(t, t.title, null, function () { playList(tr, i); }); }), '');
+      var so = songTracks();
+      fillList(ui.songList, so.map(function (t, i) { return rowFor(t, t.title, null, function () { playList(so, i); }); }), '');
     }
     function renderAll() { renderLib(); renderRadio(); renderDemos(); }
 
@@ -1045,7 +1089,38 @@
     selectTab(tab, false);
     renderAll(); updatePlay();
     loadSavedHandle();
+    if (H && H.open && H.open.length) Promise.all(H.open.map(H.file)).then(function (fs) { H.openTaken(); ensureCtx(); addFiles(fs, true); }, function () {});
     nowStatus('Demo beat');
+
+    // ---- default source: the original songs, started by the first user gesture (browsers block audio before it)
+    function startSongs() { if (autoSongs && gestured && SONGS.length) { autoSongs = false; playList(songTracks(), 0, true); } }
+    function songsReady() {
+      SONGS = root.WMP_SONGS || []; songCache = null;
+      ui.songHead.hidden = ui.songList.hidden = !SONGS.length;
+      renderDemos();
+      if (autoSongs && SONGS.length && !gestured) status('Demo beat (click or press a key to play the original songs)');
+      startSongs();
+    }
+    function firstGesture() {
+      ['pointerdown', 'keydown', 'touchstart'].forEach(function (t) { window.removeEventListener(t, firstGesture, true); });
+      gestured = true;
+      if (!autoSongs) return;
+      ensureCtx();   // created inside the gesture so audio is allowed
+      // start once the gesture's own click / key handlers have run, so a button that picks a source wins
+      var done = function () { window.removeEventListener('click', done, true); window.removeEventListener('keyup', done, true); clearTimeout(tm); setTimeout(startSongs, 0); };
+      var tm = setTimeout(done, 800);
+      window.addEventListener('click', done, true); window.addEventListener('keyup', done, true);
+    }
+    if (haveMidi) {
+      ['pointerdown', 'keydown', 'touchstart'].forEach(function (t) { window.addEventListener(t, firstGesture, true); });
+      if (SONGS.length) songsReady();
+      else if (SELF_SRC) {
+        var ss = document.createElement('script');
+        ss.src = SELF_SRC.replace(/[^\/]*([?#].*)?$/, 'songs.js');
+        ss.onload = songsReady;
+        document.head.appendChild(ss);
+      }
+    }
 
     var music = {
       sampleLevel: sampleLevel,
@@ -1058,6 +1133,9 @@
       playDemo: startDemo,
       playMic: startMic,
       playFiles: function (files) { ensureCtx(); addFiles(files, true); },
+      useDls: function (f) { ensureCtx(); return useDlsFile(f); },      // setup guide (common/setup.js)
+      hasDls: function () { return !!(dls.buf || dls.cached); },
+      addDemos: addDemos,
       openPanel: openPanel, closePanel: closePanel, togglePanel: togglePanel, isPanelOpen: isPanelOpen,
       setUiHidden: function (hide) { ui.panel.classList.toggle('hide', !!hide); if (!hide && isPanelOpen()) placePanel(); },
       isActive: function () {

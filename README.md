@@ -10,6 +10,15 @@ internet radio, MIDI files or a built-in demo beat. Works in any modern browser,
   new effects (wire cubes, gears, lightning, atom orbits, star tunnels, kaleidoscopes).
 - **Spectrum**: bars, trails, oscilloscope and dots, drawn pixel by pixel, in several original styles.
 
+### Download for Windows
+[**Retro Visualizer for Windows**](https://github.com/antonretro/retro-visualizer/releases/latest): a tiny desktop app
+(Windows 10/11, nothing else to install). It finds your Windows files by itself, so the classic presets, the
+Windows MIDI sound and the sample songs work without picking anything. Unzip and run `RetroVisualizer.exe`.
+
+### Original songs
+Three original songs by Anthony Micallef (jetpack postcard, slap happy forklift, lemonade satellite) are the
+default music, as MIDI files in `common/songs/`, under the same MIT licence.
+
 ### Bring your own Windows
 Nothing from Microsoft is included. If you own Windows 10/11 with Windows Media Player Legacy installed,
 you can unlock the original presets: choose **Load classic presets from your Windows** and pick your own

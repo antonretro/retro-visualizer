@@ -69,19 +69,22 @@
       if (opts.button) opts.button.classList.toggle('on', !!active());
     }
     function active() { return pack && CP.enabled() ? pack : null; }
+    function signal(d) { try { document.dispatchEvent(new CustomEvent('classicpack', { detail: d })); } catch (e) {} }
     function handle(files) {
       say('Reading...');
-      CP.fromFiles(files).then(function (r) {
+      return CP.fromFiles(files).then(function (r) {
         pack = r.pack;
         var saved = CP.save(pack);
         CP.setEnabled(true);
         say(r.report.lines.join('\n') + (saved ? '\nSaved on this device: you will not need to do this again.' : '\n(Could not save on this device: storage is full or disabled.)'), 'ok');
-        refresh(); onChange(active());
+        refresh(); onChange(active()); signal({ ok: true });
+        return r;
       }, function (e) {
-        say(e && e.message ? e.message : String(e), 'err');
+        say(e && e.message ? e.message : String(e), 'err'); signal({ error: e && e.message ? e.message : String(e) });
+        throw e;
       });
     }
-    input.onchange = function () { if (input.files.length) handle(input.files); input.value = ''; };
+    input.onchange = function () { if (input.files.length) handle(input.files).catch(function () {}); input.value = ''; };
     tog.onchange = function () { CP.setEnabled(tog.checked); refresh(); onChange(active()); };
     exportBtn.onclick = function () {
       var url = URL.createObjectURL(new Blob([CP.toJSON(pack)], { type: 'application/json' }));
@@ -95,16 +98,22 @@
     document.addEventListener('drop', function (e) {
       var fs = e.dataTransfer && e.dataTransfer.files;
       if (!fs || !fs.length || !Array.prototype.some.call(fs, isClassicFile)) return;
+      if (e.target && e.target.closest && e.target.closest('.rvs-back')) return;   // the setup guide (setup.js) handles its own drops
       e.preventDefault(); e.stopImmediatePropagation(); drop.classList.remove('on');
       var md = document.querySelector('.wmpm-drop'); if (md) md.classList.remove('on');
-      open(); handle(fs);
+      open(); handle(fs).catch(function () {});
     }, true);
     function open() { back.classList.remove('closed'); }
     function close() { back.classList.add('closed'); }
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !back.classList.contains('closed')) close(); });
     if (opts.button) opts.button.onclick = function () { open(); };
     refresh();
-    return { open: open, close: close, active: active, pack: function () { return pack; } };
+    // desktop app: it found wmp.dll (+ .mui) on this PC, read it in place without asking
+    var H = root.RetroHost;
+    if (H && H.wmp && !pack) Promise.all([H.file(H.wmp), H.mui ? H.file(H.mui) : null]).then(function (fs) { return handle(fs.filter(Boolean)); }).catch(function () {});
+    var api = { open: open, close: close, active: active, pack: function () { return pack; }, load: handle };
+    root.ClassicUI.last = api;
+    return api;
   }
   root.ClassicUI = { mount: mount };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

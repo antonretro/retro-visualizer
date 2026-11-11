@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Retro Visualizer</title>
+<style>
+html,body{margin:0;min-height:100%;background:#05080c;color:#e7eef5;font:15px/1.5 system-ui,Segoe UI,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px}
+h1{font-size:34px;margin:0}
+.tag{color:#93a4b4;margin:4px 0 28px}
+.cards{display:flex;flex-wrap:wrap;gap:16px}
+.card{flex:1 1 300px;display:block;text-decoration:none;color:inherit;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:18px;
+  background:linear-gradient(135deg,rgba(45,127,184,.25),rgba(120,40,160,.18))}
+.card:hover{border-color:#5aa0e0}
+.card h2{margin:0 0 6px;font-size:22px}
+.card p{margin:0;color:#c8d3dd}
+button{font:600 14px system-ui,Segoe UI,sans-serif;color:#e7eef5;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:9px 14px;cursor:pointer}
+button.on{background:#2d7fb8;border-color:#2d7fb8}
+.sec{margin-top:28px}
+.fine{color:#93a4b4;font-size:12px;margin-top:36px}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="name">Retro Visualizer</h1>
+  <div class="tag" id="tag"></div>
+  <div class="cards">
+    <a class="card" href="battery/index.html" data-vis="battery"><h2 id="n1">Plasma</h2><p>Warping, blurring palette plasma driven by your music: 12 built-in presets, Anthony's collection and endless Random mode.</p></a>
+    <a class="card" href="barswaves/index.html" data-vis="barswaves"><h2 id="n2">Spectrum</h2><p>Spectrum bars, trails and oscilloscope, drawn pixel by pixel at your screen's resolution.</p></a>
+  </div>
+  <div class="sec">
+    <button id="setup">Set up Windows extras...</button>
+    <button id="classic">Classic presets from your Windows...</button>
+    <p class="fine" style="margin-top:8px">Optional. If you own Windows, a few files from your PC unlock the original classic presets, the Windows MIDI sound and sample songs. They are read inside this page (nothing is uploaded).</p>
+  </div>
+  <div class="sec" id="dl">
+    <a class="card" href="https://github.com/antonretro/retro-visualizer/releases/latest" target="_blank" rel="noopener"><h2>Download for Windows</h2><p>The desktop app (under 1 MB, Windows 10/11, nothing else to install). It finds your Windows files by itself, so the classic presets, the Windows MIDI sound and the sample songs just work.</p></a>
+    <p class="fine" style="margin-top:8px">Source code on <a href="https://github.com/antonretro/retro-visualizer" target="_blank" rel="noopener">GitHub</a> (MIT).</p>
+  </div>
+  <script>if (window.RetroHost) document.getElementById('dl').style.display = 'none';   // already in the app</script>
+  <p class="fine" id="disc"></p>
+</main>
+<script src="common/brand.js"></script>
+<script src="common/classic.js"></script>
+<script src="common/classic-ui.js"></script>
+<script src="common/setup.js"></script>
+<script>
+(function () {
+  var B = window.BRAND;
+  document.title = B.name;
+  document.getElementById('name').textContent = B.name;
+  document.getElementById('tag').textContent = B.tagline.charAt(0).toUpperCase() + B.tagline.slice(1) + '.';
+  document.getElementById('n1').textContent = B.plasma;
+  document.getElementById('n2').textContent = B.spectrum;
+  document.getElementById('disc').textContent = B.disclaimer;
+  ClassicUI.mount({ button: document.getElementById('classic') });
+  RetroSetup.mount({ button: document.getElementById('setup') });
+  // picking a visualizer here is an active choice: the site opens into it next time (index.html)
+  [].forEach.call(document.querySelectorAll('a[data-vis]'), function (a) {
+    a.addEventListener('click', function () { try { localStorage.setItem('retro.visualizer', a.getAttribute('data-vis')); } catch (e) {} });
+  });
+})();
+</script>
+</body>
+</html>
