@@ -1,6 +1,6 @@
 # Retro Visualizer
 
-**Play it:** https://visualizer.antonretro.com
+**Play it:** https://antonretro.com/visualizer
 
 Music visualizers inspired by the classic Windows Media Player visualizers, rebuilt from scratch for the
 web: true widescreen (never stretched), sharp pixel or smooth look, and they react to your own music,
