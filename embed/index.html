@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Retro Visualizer (embed)</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#vis{display:block;width:100%;height:100%;image-rendering:pixelated}
+</style>
+</head>
+<body>
+<canvas id="vis"></canvas>
+<script src="visualizer.js"></script>
+<script>
+// Optional query parameters for testing in a desktop browser: ?vis=barswaves&preset=Aurora&demo=1&size=1280x720
+(function () {
+  var q = {}; location.search.replace(/[?&]([^=&]+)=?([^&]*)/g, function (m, k, v) { q[k] = decodeURIComponent(v); });
+  if (q.vis) setVisualizer(q.vis);
+  if (q.size) { var s = q.size.split('x'); setSize(+s[0], +s[1]); }
+  if (q.preset) setPreset(isNaN(+q.preset) ? q.preset : +q.preset);
+  if (q.demo) setIdle('demo');
+})();
+</script>
+</body>
+</html>

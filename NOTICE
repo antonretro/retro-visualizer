@@ -1,0 +1,35 @@
+Retro Visualizer - NOTICE
+
+Independent fan project, inspired by the classic Windows Media Player visualizers. Not affiliated with,
+endorsed or sponsored by Microsoft. Windows and Windows Media are trademarks of the Microsoft group of
+companies; all other trademarks belong to their owners. They are used here only to say which files the
+optional classic loader reads and what the project is compatible with.
+
+WHAT IS INCLUDED
+- Our own code (MIT, see LICENSE): two visualizer engines written from behavioural specifications, a
+  music panel, an audio analyser, a classic-preset loader, an embeddable build.
+- Our own content: 12 plasma presets (own recipes and palettes), 6 spectrum styles, a synthetic demo beat.
+- Level tables of the spectrum engine are computed from formulas (10^(8b/255) and 31.875*log10(x));
+  dist/test checks they are bit-identical to the reference.
+
+WHAT IS NOT INCLUDED, AND WHY
+- The 25 stock plasma presets and their palettes, the 4 stock spectrum styles and their names: they are
+  Microsoft's data (stored in wmp.dll and wmploc.dll.mui). Users who own Windows can load them from their
+  own copy with "Load classic presets from your Windows" (read locally in the browser; nothing is uploaded).
+  The loader contains no values taken from those files: it parses the DLL's registration script resource
+  and interprets the code that applies the styles, at load time.
+- The sample MIDI songs of C:\Windows\Media and the gm.dls sound bank: Microsoft content. The player lets
+  users pick their own copies; they stay on the user's device.
+- No Microsoft binaries (DLL, MUI, EXE) are distributed, and the project never links to DLL download sites.
+  On a Mac/Linux/TV box, copy the files (or an exported classic pack) from a Windows PC you own.
+
+THIRD-PARTY NOTE (to confirm before publishing)
+- web/battery/shifts.js contains bit-exact ports of the x64 C runtime's sin/cos/atan2 (needed for pixel-exact
+  output). Its atan2 uses two 241-entry tables of atan(j/256): the lead values are reproducible by formula
+  (atan(j/256) rounded to double, low 32 bits cleared); the tail values are residuals that could not be
+  regenerated bit-exactly. The algorithm and table layout match AMD's open-source LibM atan2 (BSD-3-Clause),
+  which is believed to be their origin - TO VERIFY before publishing (then credit AMD here), or replace the
+  tails by correctly rounded residuals (results could then differ by 1 ulp in rare cases).
+
+Third-party code: the atan2 lookup tables are from AMD LibM (aocl-libm-ose), BSD 3-Clause.
+See THIRD_PARTY_AMD_LIBM.txt.
