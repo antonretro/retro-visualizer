@@ -49,7 +49,9 @@
   var MIDI_RE = /\.(mid|midi|kar|rmi)$/i, SF2_RE = /\.sf2$/i;
   var K_FAVS = 'wmpmusic.radio.favs', K_NOVIZ = 'wmpmusic.radio.noviz', K_OPTS = 'wmpmusic.options', K_SOUND = 'wmpmusic.sound';
   var DLS_PATH = 'C:\\Windows\\System32\\drivers\\gm.dls';
-  var SOUNDS = [['retro', 'Retro Synth'], ['windows', 'Windows (gm.dls)'], ['sf2', 'SoundFont']];
+  var SOUNDS = [['retro', 'Retro Synth'], ['gu', 'GeneralUser GS'], ['windows', 'Windows (gm.dls)'], ['sf2', 'SoundFont']];
+  // GeneralUser GS v2.0.3 by S. Christian Collins (free licence, see soundfonts/LICENSE-GeneralUser-GS.txt), shipped next to this file
+  var GU_FILE = 'soundfonts/GeneralUser-GS.sf2';
   var API_SERVERS = ['https://de1.api.radio-browser.info', 'https://de2.api.radio-browser.info', 'https://fi1.api.radio-browser.info'];
   var MAX_ROWS = 300;
 
@@ -245,7 +247,7 @@
     var sf = { key: '', name: '' }, pendingSf = null;
     var fx = lsGet('wmpm.fx', null) || { reverb: 1, chorus: 1 };
     var soundChoice = lsGet(K_SOUND, null);   // null until the user picks: Retro Synth by default
-    var soundMode = soundChoice === 'windows' || soundChoice === 'sf2' ? soundChoice : soundChoice == null && H && H.dls ? 'windows' : 'retro';
+    var soundMode = soundChoice === 'windows' || soundChoice === 'sf2' || soundChoice === 'gu' ? soundChoice : soundChoice == null && H && H.dls ? 'windows' : 'retro';
     var dls = { cached: false, buf: null }, soundQ = Promise.resolve(), pendingPick = '';
     var queue = { list: [], order: [], pos: -1 };
     var token = 0, radioTimer = 0, demo = new DemoBeat();
@@ -391,6 +393,14 @@
         var p = pendingSf;
         return { key: p.key, name: p.name, get: function () { return (p.file ? Promise.resolve(p.file) : p.getFile()).then(readFile); } };
       }
+      if (soundMode === 'gu') return { key: 'gu', name: 'GeneralUser GS', get: function () {
+        var url; try { url = new URL(GU_FILE, SELF_SRC || location.href).href; } catch (e) { url = GU_FILE; }
+        if (!root.fetch) return Promise.reject(new Error('this browser cannot load it'));
+        return root.fetch(url).then(function (r) {
+          if (!r.ok) throw new Error('not found (' + r.status + ')');
+          return r.arrayBuffer();
+        }, function () { throw new Error(location.protocol === 'file:' ? 'browsers block it when the page is opened as a file; use the app or a web server' : 'could not download it'); });
+      } };
       return { key: '', name: 'Retro Synth' };
     }
     function soundLabel() { return sf.key && sf.name ? sf.name : 'Retro Synth'; }
@@ -774,6 +784,7 @@
     ui.sf2Input.onchange = function () { var fs = this.files; if (fs && fs.length) { ensureCtx(); addFiles(fs, false); } this.value = ''; };
     var soundTitles = {
       retro: 'The built-in synth (no files needed)',
+      gu: 'GeneralUser GS by S. Christian Collins: a free, full General MIDI SoundFont (32 MB, loads once)',
       windows: 'The General MIDI sound bank that comes with Windows (Microsoft GS Wavetable Synth). Pick ' + DLS_PATH + ' once; it is kept in this browser only. On a Mac or other system, copy it from a Windows PC you own.',
       sf2: 'A SoundFont (.sf2) file of your own'
     };
@@ -813,6 +824,8 @@
         kids.push(h('span', { text: 'Windows GM sound set from your gm.dls (' + (H && !dls.cached ? 'read from your Windows' : 'stored in this browser only') + ').' }),
           h('button', { text: 'Pick again', onclick: function () { ui.dlsInput.click(); } }),
           h('button', { text: 'Forget', title: 'Remove the stored copy of gm.dls from this browser', onclick: forgetDls }));
+      } else if (soundMode === 'gu') {
+        kids.push(h('span', { text: 'GeneralUser GS v2.0.3 by S. Christian Collins (free licence)' }));
       } else if (soundMode === 'sf2') {
         kids.push(h('span', { text: 'SoundFont: ' + (pendingSf ? (sf.key === pendingSf.key && sf.name ? sf.name : pendingSf.name) : 'none yet') }),
           h('button', { text: pendingSf ? 'Other .sf2' : 'Pick .sf2', onclick: function () { ui.sf2Input.click(); } }));
